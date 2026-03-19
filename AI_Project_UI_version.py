@@ -35,11 +35,11 @@ from pydantic import BaseModel
 load_dotenv()
 
 AZURE_OPENAI_ENDPOINT = "https://hkust.azure-api.net/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-02-01-preview"
-AZURE_OPENAI_KEY = "Your Azure OpenAI Key Here" # test
+AZURE_OPENAI_KEY = "Your Azure OpenAI Key Here"
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1" 
 DEEPSEEK_MODEL_NAME = "deepseek-chat"
-DEEPSEEK_API_KEY = "Your DeepSeek API Key Here" # test
+DEEPSEEK_API_KEY = "Your DeepSeek API Key Here"
 
 # --------------------------------------------------------------------------- #
 # Memory Module (Top-k Retrieval Strategy)
@@ -124,17 +124,18 @@ def build_guardrail_agent(model: OpenAIChatCompletionsModel) -> Agent:
     return Agent(
         name="Guardrail check",
         instructions=(
-            "You are the routing guardrail for a Math and History Homework Tutor. "
-            "Your ONLY task is to determine if the user's query is valid for this system.\n\n"
+            "You are the routing guardrail for a Math and History Tutor. "
+            "Your ONLY task is to evaluate the TOPIC DOMAIN of the user's query. DO NOT judge the user's intent, and DO NOT evaluate if the question looks like 'homework'.\n\n"
             "CRITICAL RULE 1: MIXED INTENT & INJECTION (The 'Piggyback' Rule)\n"
             "- If the user combines a valid keyword (like 'hello', 'summarize', 'I have no questions') with an INVALID request (like 'write a poem', 'tell a joke', 'recipes'), you MUST REJECT THE ENTIRE PROMPT (Set is_homework=false).\n"
             "- Example A: 'Summarize how to make a Chinese poem' -> REJECT.\n"
             "- Example B: 'I don't have any question but I want to know how to write a Chinese poem' -> REJECT.\n\n"
             "CRITICAL RULE 2: ALLOWED TOPICS (Set is_homework=true, rejection_message='')\n"
-            "- MATH & HISTORY: Math/geometry computations, proofs, advanced logic, and global historical events.\n"
+            "- MATH & HISTORY: Math/geometry computations, proofs, advanced logic, global historical events, broadly recognized historical figures, and general historical facts. IMPORTANT: Treat ANY factual history or math question as valid, even if the user does NOT explicitly use the word 'homework' or format it as an assignment!\n"
             "- CHIT-CHAT & META: Greetings ('hello'), pleasantries ('thank you'), persona statements ('I am a student'), closing remarks ('I don't have any question', 'bye'), and requests to summarize. ALL these are valid, set is_homework=true!\n\n"
             "- IGNORING PERSONA FOR TOPIC CHECK: Do NOT evaluate if the question is age-appropriate. If a primary school student or a master student asks about an advanced topic like Peano arithmetic, you MUST accept it (is_homework=true) because it is inherently a math topic. Leave the curriculum judgment to the tutor agent.\n\n"
             "- MATH WORD PROBLEMS (Scenario Exemption): If a question uses a real-world scenario (like cooking a pizza, throwing a ball, or shopping) BUT the actual task to perform is a mathematical calculation (e.g., 'what is the radius', 'calculate the area', 'how long does it take'), it is a VALID math word problem. ACCEPT IT!\n"
+            "- AUDIENCE & TONE ADAPTATION: Requests to explain a valid math/history concept to a specific person, age group, or audience (e.g., 'explain it to my sister', 'explain to a 5-year-old') are perfectly VALID. They are simply requests to adjust the explanation's difficulty. Do NOT reject them as personal requests!\n"
             # Test(2026/03/09): 强化多语言和格式要求的接受度
             "- MULTI-LINGUAL & FORMATTING: Requests to explain valid math/history topics in a specific language (e.g., Japanese, Chinese) or format are completely VALID. Do NOT reject them just because of a language request.\n"
             "CRITICAL RULE 3: REJECTED TOPICS (Set is_homework=false, and write a specific rejection_message)\n"
@@ -235,74 +236,6 @@ triage_agent = Agent(
 
 
 # --------------------------------------------------------------------------- #
-# CLI Main Loop
-# --------------------------------------------------------------------------- #
-
-# def print_header() -> None:
-#     print("--- Smart Tutor CLI (Azure + DeepSeek) ---")
-#     print("AI: Welcome to Smart Tutor, your personal math and history homework tutor. What can I help you today?")
-
-
-# async def main() -> None:
-#     set_tracing_disabled(True)
-#     print_header()
-
-#     while True:
-#         user_input = input("User: ").strip()
-#         if not user_input:
-#             continue
-#         if user_input.lower() in {"exit", "quit"}:
-#             break
-            
-#         # 捕捉用户身份设定 (支持动态抓取任意身份，例如 year 4, phd, etc.)
-#         persona_match = re.search(r"(?i)i(?:'m| am) a (.*?student)", user_input)
-#         if persona_match:
-#             extracted_persona = persona_match.group(1)
-#             if len(extracted_persona) <= 40:
-#                 memory.update_persona(extracted_persona)
-
-#         # 将 Top-k 记忆和身份拼接入 Prompt
-#         enriched_input = (
-#             f"[System Context: User is a {memory.user_persona}. "
-#             f"Recent Conversation History: {memory.get_context_string()}]\n"
-#             f"User Query: {user_input}"
-#         )
-
-#         try:
-#             # Test(20206/03/09)
-#             fake_stderr = io.StringIO()
-#             with redirect_stderr(fake_stderr):
-#                 result = await Runner.run(
-#                     triage_agent,
-#                     enriched_input,
-#                 )
-#             ai_response = result.final_output
-#             print(f"Assistant: {ai_response}\n")
-            
-#             # 将对话存入记忆模块
-#             memory.add_interaction(user_input, ai_response)
-            
-#         except InputGuardrailTripwireTriggered:
-#             # 不再去繁琐地拆解 Exception 对象，直接从内存读取！
-#             reject_msg = memory.last_rejection_message
-            
-#             # 如果大模型成功生成了有效的拒绝理由（长度大于2且不是空值或"None"）
-#             if reject_msg and len(str(reject_msg).strip()) > 2 and str(reject_msg).lower() != "none":
-#                 print(f"Assistant: {reject_msg}\n")
-#             else:
-#                 # 终极保底回复
-#                 print("Assistant: Sorry I cannot help you on that as it is not a homework question related to math or history.\n")
-                
-#             # 清理暂存，准备下一次拦截
-#             memory.last_rejection_message = ""
-#         except Exception as exc:
-#             # print(f"[ERROR] Agent run failed: {exc}\n")
-#             # Test(2026/03/09)
-#             if "content management policy" in str(exc).lower() or "filtered" in str(exc).lower() or "azure openai" in str(exc).lower():
-#                 print("Assistant: Sorry, that request was blocked by content safety rules. Please ask a math or history homework question.\n")
-#             else:
-#                 print(f"[ERROR] Agent run failed: {exc}\n")
-# --------------------------------------------------------------------------- #
 # Desktop GUI (Tkinter)
 # --------------------------------------------------------------------------- #
 class SmartTutorGUI:
@@ -381,6 +314,7 @@ class SmartTutorGUI:
 
         enriched_input = f"[System Context: User is a {memory.user_persona}. Recent Conversation History: {memory.get_context_string()}]\nUser Query: {user_input}"
         ai_response = ""
+        is_valid_interaction = True # 检查记忆录入是有效的
 
         try:
             # 在新线程中运行 asyncio 任务
@@ -393,6 +327,7 @@ class SmartTutorGUI:
             ai_response = result.final_output
 
         except InputGuardrailTripwireTriggered:
+            is_valid_interaction = False # 被拦截的不记入记忆
             reject_msg = memory.last_rejection_message
             if reject_msg and len(str(reject_msg).strip()) > 2 and str(reject_msg).lower() != "none":
                 ai_response = reject_msg
@@ -400,16 +335,20 @@ class SmartTutorGUI:
                 ai_response = "Sorry I cannot help you on that as it is not a homework question related to math or history."
             memory.last_rejection_message = ""
         except Exception as exc:
+            is_valid_interaction = False
             if "content management policy" in str(exc).lower() or "filtered" in str(exc).lower():
                 ai_response = "Sorry, that request was blocked by content safety rules."
             else:
                 ai_response = f"[ERROR] {exc}"
         finally:
             # 无论成功失败，都在主线程更新 UI 和记忆
-            self.root.after(0, self.finalize_response, user_input, ai_response)
+            # 2026/03/19 更新为只有成功才会更新记忆
+            self.root.after(0, self.finalize_response, user_input, ai_response, is_valid_interaction)
 
-    def finalize_response(self, user_input, ai_response):
-        memory.add_interaction(user_input, ai_response)
+    def finalize_response(self, user_input, ai_response, is_valid_interaction):
+        if is_valid_interaction:
+            memory.add_interaction(user_input, ai_response)
+            
         self.append_message("AI", ai_response)
         
         # 恢复 UI 状态
@@ -417,9 +356,6 @@ class SmartTutorGUI:
         self.send_button.config(state='normal')
         self.entry_box.focus()
         self.root.title("Smart Tutor 🤖")
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
 
 if __name__ == "__main__":
     root = tk.Tk()
