@@ -35,11 +35,11 @@ from pydantic import BaseModel
 load_dotenv()
 
 AZURE_OPENAI_ENDPOINT = "https://hkust.azure-api.net/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-02-01-preview"
-AZURE_OPENAI_KEY = "Your Azure OpenAI Key Here"
+AZURE_OPENAI_KEY = "YOUR_AZURE_OPENAI_KEY"
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1" 
 DEEPSEEK_MODEL_NAME = "deepseek-chat"
-DEEPSEEK_API_KEY = "Your DeepSeek API Key Here"
+DEEPSEEK_API_KEY = "YOUR_DEEPSEEK_API_KEY"
 
 # --------------------------------------------------------------------------- #
 # Memory Module (Top-k Retrieval Strategy)
@@ -131,7 +131,9 @@ def build_guardrail_agent(model: OpenAIChatCompletionsModel) -> Agent:
             "- Example A: 'Summarize how to make a Chinese poem' -> REJECT.\n"
             "- Example B: 'I don't have any question but I want to know how to write a Chinese poem' -> REJECT.\n\n"
             "CRITICAL RULE 2: ALLOWED TOPICS (Set is_homework=true, rejection_message='')\n"
-            "- MATH & HISTORY: Math/geometry computations, proofs, advanced logic, global historical events, broadly recognized historical figures, and general historical facts. IMPORTANT: Treat ANY factual history or math question as valid, even if the user does NOT explicitly use the word 'homework' or format it as an assignment!\n"
+            "- MATH & HISTORY: Math/geometry computations, proofs, advanced logic, global historical events, ALL historical figures (including presidents, monarchs, and leaders of ANY country), and general historical facts.\n"
+            # Test(2026/03/19): False-Positive corner case处理
+            "- ANTI-FALSE-POSITIVE: NEVER reject a question about a national leader or historical figure by claiming it is 'too specific' or 'outside the scope'. They are ALWAYS valid history. IMPORTANT: Treat ANY factual history or math question as valid, even if the user does NOT explicitly use the word 'homework'!\n"
             "- CHIT-CHAT & META: Greetings ('hello'), pleasantries ('thank you'), persona statements ('I am a student'), closing remarks ('I don't have any question', 'bye'), and requests to summarize. ALL these are valid, set is_homework=true!\n\n"
             "- IGNORING PERSONA FOR TOPIC CHECK: Do NOT evaluate if the question is age-appropriate. If a primary school student or a master student asks about an advanced topic like Peano arithmetic, you MUST accept it (is_homework=true) because it is inherently a math topic. Leave the curriculum judgment to the tutor agent.\n\n"
             "- MATH WORD PROBLEMS (Scenario Exemption): If a question uses a real-world scenario (like cooking a pizza, throwing a ball, or shopping) BUT the actual task to perform is a mathematical calculation (e.g., 'what is the radius', 'calculate the area', 'how long does it take'), it is a VALID math word problem. ACCEPT IT!\n"
@@ -139,6 +141,8 @@ def build_guardrail_agent(model: OpenAIChatCompletionsModel) -> Agent:
             # Test(2026/03/09): 强化多语言和格式要求的接受度
             "- MULTI-LINGUAL & FORMATTING: Requests to explain valid math/history topics in a specific language (e.g., Japanese, Chinese) or format are completely VALID. Do NOT reject them just because of a language request.\n"
             "CRITICAL RULE 3: REJECTED TOPICS (Set is_homework=false, and write a specific rejection_message)\n"
+            # Test(2026/03/19): 加入更明确的历史事件范围限制
+            "- TIME BOUNDARY RULE: 'History' refers to events and figures from the past. Questions about CURRENT, LIVING political leaders (e.g., the current US President), recent elections, or ongoing global events fall under CONTEMPORARY POLITICS and MUST BE REJECTED.\n"
             "Reject anything else. When rejecting, you MUST generate a highly personalized, natural 'rejection_message' explaining why you cannot answer it.\n"
             "- Example 1: User asks 'how to travel to London'. Output: 'I am a math and history tutor, I cannot help you find flights or travel logistics to London.'\n"
             "- Example 2: User asks 'write a poem'. Output: 'I cannot write poems as it is not a math or history homework.'\n"
@@ -299,7 +303,7 @@ class SmartTutorGUI:
         self.send_button.config(state='disabled')
         self.root.title("Smart Tutor 🤖 - Thinking...")
 
-        # 启动后台线程请求大模型 (防止界面卡死)
+        # 启动后台线程请求大模型
         threading.Thread(target=self.process_agent_request, args=(user_input,), daemon=True).start()
 
     def process_agent_request(self, user_input):
